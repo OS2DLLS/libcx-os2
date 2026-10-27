@@ -1,0 +1,147 @@
+## @file
+# Global kBuild project configuration file
+
+# Grab version number
+BUILD_VERSION_FILE := $(PATH_ROOT)/src/version.h
+BUILD_VERSION := $(shell $(SED) -nr -e 's/^\#define VERSION_MAJOR[[:space:]]+([0-9][0-9a-z]*).*$$/\1/p' \
+                                    -e 's/^\#define VERSION_MINOR[[:space:]]+([0-9][0-9a-z]*).*$$/\1/p' \
+                                    -e 's/^\#define VERSION_BUILD[[:space:]]+([0-9][0-9a-z]*).*$$/\1/p' \
+                                    < $(BUILD_VERSION_FILE))
+BUILD_VERSION_MAJOR := $(word 1, $(BUILD_VERSION))
+$(if $(BUILD_VERSION_MAJOR),,$(error $(BUILD_VERSION_FILE): Invalid VERSION_MAJOR))
+BUILD_VERSION_MINOR := $(word 2, $(BUILD_VERSION))
+$(if $(BUILD_VERSION_MINOR),,$(error $(BUILD_VERSION_FILE): Invalid VERSION_MINOR))
+BUILD_VERSION_BUILD := $(word 3, $(BUILD_VERSION))
+$(if $(BUILD_VERSION_BUILD),,$(error $(BUILD_VERSION_FILE): Invalid VERSION_BUILD))
+BUILD_VERSION := $(BUILD_VERSION_MAJOR).$(BUILD_VERSION_MINOR).$(BUILD_VERSION_BUILD)
+BUILD_VERSION_DEPS = $(BUILD_VERSION_FILE) $(MAKEFILE_LIST)
+
+# Grab build properties suitable for BLDLEVEL
+BUILD_DATE := $(shell LANG=C printf ' %-24.24s ' "`date -u +'%Y-%m-%d %T'`")
+BUILD_HOST := $(shell printf '%-.11s' `echo $$HOSTNAME`)
+
+# Format BLDLEVEL string (excluding the description, may be used as a prefix for it)
+BUILD_BLDLEVEL := @\#bww bitwise works GmbH:$(BUILD_VERSION_MAJOR).$(BUILD_VERSION_MINOR)\#@\#\#1\#\#$(BUILD_DATE)$(BUILD_HOST)::::$(BUILD_VERSION_BUILD)::@@
+
+# Unix layout: DLLs come to the lib dir.
+INST_DLL = $(INST_LIB)
+
+# Non-standard installation dirs.
+INST_INCLUDE ?= include/
+
+# Unix-like hard-coded installation prefix (set by e.g. RPM).
+ifdef INST_PREFIX
+ifneq ($(DESTDIR)$(DESTROOT),)
+PATH_INS = $(firstword $(DESTDIR) $(DESTROOT))/$(INST_PREFIX)
+else
+PATH_INS = $(PATH_OUT)/$(INST_PREFIX)
+endif
+else
+INST_PREFIX = $(PATH_INS)
+endif
+
+# GCC 8 option to strip absolute file paths (both to save space and for safety)
+GCC_OPT_STRIP_FILEPATH = \
+	-ffile-prefix-map=$(PATH_ROOT)=libcx \
+	-ffile-prefix-map=$(PATH_OUT)=libcx \
+	-ffile-prefix-map=$(TEMP)=libcx
+
+#
+# Templates
+#
+
+TEMPLATE_C = C sources
+TEMPLATE_C_TOOL = GCC3OMF
+# If either CFLAGS or LDFLAGS are set, assume that they configure the build flavor
+# (like in case of the RPM build), otherwise set the flavor ourselves.
+ifneq ($(strip $(CFLAGS)$(LDFLAGS)),)
+TEMPLATE_C_CFLAGS += $(CFLAGS)
+TEMPLATE_C_LDFLAGS += $(LDFLAGS)
+else
+TEMPLATE_C_CFLAGS.release += -g -O2 $(GCC_OPT_STRIP_FILEPATH)
+TEMPLATE_C_CFLAGS.debug += -g -O0 -DDEBUG $(GCC_OPT_STRIP_FILEPATH)
+TEMPLATE_C_LDFLAGS.release += -g
+TEMPLATE_C_LDFLAGS.debug += -g
+endif
+
+ifdef LIBCX_DEV_BUILD
+TEMPLATE_C_DEFS += LIBCX_DEV_BUILD
+endif
+
+TEMPLATE_Dll = DLLs
+TEMPLATE_Dll_EXTENDS = C
+TEMPLATE_Dll_LDFLAGS = -Zhigh-mem
+# Create a.out import libraries when installing
+TEMPLATE_Dll_POST_INST_CMDS = \
+  $$(QUIET)$$(TOOL_GCC3OMF_AR_IMP) $$@ -o $$(@:$(SUFF_DLL)=.a) \
+  $$(NL)$$(TAB)$$(QUIET)$$(TOOL_GCC3OMF_AR_IMP) $$@ -o $$(@D)/$(target).a
+
+TEMPLATE_Util = Utils
+TEMPLATE_Util_EXTENDS = C
+TEMPLATE_Util_LIBS = $(PATH_STAGE_LIB)/libcx0$(SUFF_LIB)
+
+TEMPLATE_Test = Tests
+TEMPLATE_Test_EXTENDS = C
+TEMPLATE_Test_DEFS = _GNU_SOURCE
+TEMPLATE_Test_INCS = src/poll src/mmap
+TEMPLATE_Test_LIBS = $(PATH_STAGE_LIB)/libcx0$(SUFF_LIB) pthread
+
+#
+# Simple test framework
+#
+
+ALL_TESTS = $(TESTS) $(TESTS.$(KBUILD_TYPE))
+ALL_TARGETS += $(ALL_TESTS)
+
+##
+# Defines rules for one test.
+# $(test) - test source.
+# $(target) - test target name.
+#
+define def_test_rules
+
+PROGRAMS += $(target)
+$(target)_TEMPLATE = Test
+$(target)_INCS = $$(abspathex $$(dir $(test)), $$($(test)_DEFPATH))
+$(target)_SOURCES = $$(abspathex $(test), $$($(test)_DEFPATH)) $$(abspathex $($(test)_SOURCES), $$($(test)_DEFPATH))
+
+# Note: LIBPATHSTRICT=T doesn't work with posix shells, use cmd.exe.
+.PHONY: test-$(target)
+test-$(target):
+ifneq ($(has_iters),)
+	$(QUIET)rm -rf test-$(target).log
+	$(QUIET)for f in `seq 1 $(iters)` ; \
+	do \
+	  echo Running test $(target) [iter $$$$f]... ; \
+	  LIBCX_TRACE_OUTPUT=curdir LIBC_LOGGING_OUTPUT=curdir \
+	  BEGINLIBPATH="$(PATH_STAGE_LIB);$(BEGINLIBPATH)" LIBPATHSTRICT=T $(PATH_STAGE_BIN)/$$(notdir $$($(target)_1_TARGET)) --direct >> test-$(target).log 2>&1 || exit $$$$? ; \
+	done
+else
+	$(QUIET)echo Running test $(target)...
+	$(QUIET)LIBCX_TRACE_OUTPUT=curdir LIBC_LOGGING_OUTPUT=curdir \
+	BEGINLIBPATH="$(PATH_STAGE_LIB);$(BEGINLIBPATH)" LIBPATHSTRICT=T $(PATH_STAGE_BIN)/$$(notdir $$($(target)_1_TARGET)) --direct > test-$(target).log 2>&1
+endif
+
+ifneq ($(ordered),)
+.NOTPARALLEL: test-$(target)
+endif
+
+TESTING += test-$(target)
+
+endef # def_test_rules
+
+##
+# Defines one test.
+# $(test) - test source.
+#
+define def_test
+local target := $(notdir $(basename $(test)))
+local ordered := $($(test)_ORDERED)
+local has_iters :=
+local iters := 1
+ifneq ($($(target)_ITERATIONS),)
+local has_iters := 1
+local iters := $($(target)_ITERATIONS)
+endif
+$(eval $(def_test_rules))
+endef # def_test

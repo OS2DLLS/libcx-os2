@@ -1,0 +1,148 @@
+## @file
+# kBuild makefile for libcx DLL and tests
+#
+
+SUB_DEPTH = ..
+include $(KBUILD_PATH)/subheader.kmk
+
+#
+# Main libcx DLL
+#
+
+DLLS += libcx
+
+libcx_TEMPLATE = Dll
+libcx_NAME = libcx0 # must match libcx.def
+libcx_INCS = poll mmap
+libcx_SOURCES = \
+  fcntl/fcntl.c \
+  pwrite/pwrite.c \
+  poll/poll.c \
+  select/select.c \
+  mmap/mmap.c \
+  exeinfo/exeinfo.c \
+  beginthread.c \
+  spawn/spawn2.c \
+  net/getaddrinfo.c \
+  net/getifaddrs.c \
+  net/if_nameindex.c \
+  shmem/shmem.c \
+  libcx/handles.c \
+  libcx/interrupt.c \
+  lend/ld32.c \
+  main.c \
+  main.s \
+  shared.c
+
+# Release definitions
+libcx_SOURCES.release += $(PATH_OBJ)/libcx-release.def
+
+$(PATH_OBJ)/libcx-release.def: $(PATH_SUB_CURRENT)/libcx.def $(BUILD_VERSION_DEPS) | $(call DIRDEP,$(PATH_OBJ))
+	$(call MSG_L1,Generating $@)
+	$(QUIET)cp $< $@
+	$(QUIET)echo DESCRIPTION '"$(BUILD_BLDLEVEL)kLIBC Extension Library"' >> $@
+
+# Debug definitions
+libcx_DEFS.debug = TRACE_ENABLED STATS_ENABLED DEBUG
+libcx_SOURCES.debug += $(PATH_OBJ)/libcx-debug.def
+
+$(PATH_OBJ)/libcx-debug.def: $(PATH_SUB_CURRENT)/libcx.def $(BUILD_VERSION_DEPS) | $(call DIRDEP,$(PATH_OBJ))
+	$(call MSG_L1,Generating $@)
+	$(QUIET)sed -e 's/  ;ddd /  /' < $< > $@
+	$(QUIET)echo DESCRIPTION '"$(BUILD_BLDLEVEL)kLIBC Extension Library (debug)"' >> $@
+
+# Make sure tests & utils inherit libcx debug defs
+TEMPLATE_Test_DEFS.debug += $(libcx_DEFS.debug)
+TEMPLATE_Util_DEFS.debug += $(libcx_DEFS.debug)
+
+#
+# Utilities
+#
+
+PROGRAMS += libcx-stats
+libcx-stats_TEMPLATE = Util
+libcx-stats_SOURCES = libcx-stats.c $(PATH_OBJ)/tool.def
+
+PROGRAMS += libcx-spawn2-wrapper
+libcx-spawn2-wrapper_INST = $(INST_DLL)libcx-spawn2.wrp
+libcx-spawn2-wrapper_TEMPLATE = Util
+libcx-spawn2-wrapper_SOURCES = spawn/spawn2-wrapper.c $(PATH_OBJ)/tool.def
+
+INSTALLS += libcx-spawn2-wrapper-inst
+libcx-spawn2-wrapper_inst_SOURCES = $(libcx-spawn2-wrapper_1_TARGET)
+
+$(PATH_OBJ)/tool.def: $(BUILD_VERSION_DEPS) | $(call DIRDEP,$(PATH_OBJ))
+	$(call MSG_L1,Generating $@)
+	$(QUIET)echo DESCRIPTION '"$(BUILD_BLDLEVEL)kLIBC Extension Library Tool"' >> $@
+
+#
+# Tests
+#
+
+TESTS_INCS += poll mmap
+
+TESTS.debug += tst-shared.c
+tst-shared.c_ORDERED = 1
+
+TESTS += tst-fpucw.c
+
+TESTS += \
+  fcntl/tst-flock2.c \
+  fcntl/tst-flock3.c \
+  fcntl/tst-flock-sj.c \
+  fcntl/tst-deadlk.c
+
+TESTS += pwrite/tst-pwrite.c
+
+TESTS += poll/tst-poll.c
+
+TESTS += select/tst-select.c
+
+TESTS += \
+  mmap/tst-anon_mmap.c \
+  mmap/tst-anon_mmap2.c \
+  mmap/tst-mmap.c \
+  mmap/tst-mmap2.c \
+  mmap/tst-mmap3.c \
+  mmap/tst-mmap4.c \
+  mmap/tst-mmap5.c \
+  mmap/tst-mmap6.c \
+  mmap/tst-mmap7.c \
+  mmap/tst-mmap8.c \
+  mmap/tst-mmap9.c \
+  mmap/tst-mmap10.c \
+  mmap/tst-mmap11.c \
+  mmap/tst-mmap12.c \
+  mmap/tst-msync.c \
+  mmap/tst-msync2.c \
+  mmap/tst-msync3.c \
+  mmap/tst-madvise.c \
+  mmap/tst-mprotect.c
+
+tst-mmap11_ITERATIONS = 5
+
+TESTS += exeinfo/tst-exeinfo.c
+exeinfo/tst-exeinfo.c_SOURCES = exeinfo/tst-exeinfo.rc
+
+TESTS += spawn/tst-spawn2.c
+
+TESTS += \
+  net/tst-getaddrinfo.c \
+  net/tst-getifaddrs.c \
+  net/tst-nameindex.c
+
+TESTS += shmem/tst-shmem.c
+
+TESTS += libcx/tst-handles.c
+
+PROGRAMS += tst-exeinfo-packed-1
+tst-exeinfo-packed-1_TEMPLATE = Test
+tst-exeinfo-packed-1_SOURCES = exeinfo/tst-exeinfo.c exeinfo/tst-exeinfo.rc
+tst-exeinfo-packed-1_POST_CMDS = lxlite $(out) /CS /MR3 /MLN >nul
+
+PROGRAMS += tst-exeinfo-packed-2
+tst-exeinfo-packed-2_TEMPLATE = Test
+tst-exeinfo-packed-2_SOURCES = exeinfo/tst-exeinfo.c exeinfo/tst-exeinfo.rc
+tst-exeinfo-packed-2_POST_CMDS = lxlite $(out) /CS /MRN /ML1 >nul
+
+include $(FILE_KBUILD_SUB_FOOTER)
