@@ -108,3 +108,11 @@ The development of LIBCx, as well as all other projects maintained by bitwise, r
  1. Install [RPM/YUM](http://trac.netlabs.org/rpm/wiki/RpmInstall) on your existing OS/2 system or upgrade it to [ArcaOS](https://www.arcanoae.com/arcaos/) which comes with RPM/YUM pre-installed.
  2. Install the basic tool chain with `yum install gcc gcc-wlink gcc-wrc libc-devel kbuild kbuild-make rpm-build`.
  3. Inspect [libcx.spec](http://trac.netlabs.org/rpm/browser/spec/trunk/SPECS/libcx.spec) for specific build requirements and build steps which you can either complete automatically with `rpmbuild libcx.spec -bb` or manually from the command line.
+
+### Local Linux-to-OS/2 cross-build
+
+The `/data/Makefile` target `libcx` builds with the OS/2 EMX compiler and keeps
+the compiler-facing copy under `/data/os2emx/i686-pc-os2-emx/usr/lib`. It also
+installs the target DLL and import libraries under `/data/os2emx/lib` for the
+shared target prefix. Run it from `nix-shell /data/shell.nix`; build outputs
+remain under `/data/build-nix`.

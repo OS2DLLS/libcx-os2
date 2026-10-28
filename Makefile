@@ -7,6 +7,7 @@ LIBCX_ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 OS2EMX_PREFIX ?= /data/os2emx
 OS2EMX_TARGET ?= i686-pc-os2-emx
 OS2EMX_SYSROOT ?= $(OS2EMX_PREFIX)/$(OS2EMX_TARGET)
+OS2EMX_INSTALL_ROOT ?= $(OS2EMX_PREFIX)
 OS2EMX_BUILD_ROOT ?= /data/build-nix
 BUILD_DIR ?= $(OS2EMX_BUILD_ROOT)/libcx-os2
 OS2TK45_INCLUDE_DIR ?= /data/os2tk45/h
@@ -15,6 +16,8 @@ PREFIX ?= /usr
 # Install into the active target sysroot by default; override DESTDIR to stage.
 DESTDIR ?= $(OS2EMX_SYSROOT)
 LIBDIR ?= $(PREFIX)/lib
+PREFIX_DESTDIR ?= $(OS2EMX_INSTALL_ROOT)
+PREFIX_LIBDIR ?= /lib
 INSTALL ?= install
 
 ifeq ($(strip $(OS2EMX_CC)),)
@@ -76,7 +79,7 @@ LINK_FLAGS ?= -Zomf -Zdll -Zhigh-mem -Zmap=$(BUILD_DIR)/libcx0.map
 # separate cx_s.a runtime and create a circular/self dependency.
 LIBS ?= -Zcrtdll
 
-.PHONY: all check-toolchain install clean
+.PHONY: all check-toolchain install install-prefix clean
 all: $(DLL) $(IMPORT_LIB0_OUT) $(IMPORT_LIB_OUT) \
 	$(IMPORT_ARCHIVE0_OUT) $(IMPORT_ARCHIVE_OUT)
 
@@ -115,6 +118,14 @@ install: all
 	$(INSTALL) -m 755 "$(DLL)" "$(DESTDIR)$(LIBDIR)/$(DLL_NAME)"
 	$(INSTALL) -m 644 "$(IMPORT_LIB0_OUT)" "$(IMPORT_LIB_OUT)" \
 		"$(IMPORT_ARCHIVE0_OUT)" "$(IMPORT_ARCHIVE_OUT)" "$(DESTDIR)$(LIBDIR)/"
+
+# Also expose the target package from the shared OS/2 prefix, while preserving
+# the sysroot copy used by cross-linking. PREFIX_DESTDIR can stage this copy.
+install-prefix: all
+	$(INSTALL) -d "$(PREFIX_DESTDIR)$(PREFIX_LIBDIR)"
+	$(INSTALL) -m 755 "$(DLL)" "$(PREFIX_DESTDIR)$(PREFIX_LIBDIR)/$(DLL_NAME)"
+	$(INSTALL) -m 644 "$(IMPORT_LIB0_OUT)" "$(IMPORT_LIB_OUT)" \
+		"$(IMPORT_ARCHIVE0_OUT)" "$(IMPORT_ARCHIVE_OUT)" "$(PREFIX_DESTDIR)$(PREFIX_LIBDIR)/"
 
 clean:
 	rm -rf "$(BUILD_DIR)"
